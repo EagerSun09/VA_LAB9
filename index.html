@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<head>
+  <script src="d3.v7.min.js"></script>
+  <link href="nouislider.min.css" rel="stylesheet">
+  <style>
+    body {
+        font-family: sans-serif;
+        font-size: 10pt;
+    }
+    text {
+        font-family: sans-serif;
+        font-size: 10pt;
+    }
+    input {
+        vertical-align: middle;
+    }
+    .noUi-tooltip {
+        display: none;
+    }
+    .noUi-active .noUi-tooltip {
+        display: block;
+    }
+    .container
+    {
+        text-align:center;
+        padding-left: 20px;
+    }
+    .tooltip {
+            position: absolute;
+            font-size: 12px;
+            width:  auto;
+            height: auto;
+            pointer-events: none;
+            background-color: white;
+    }
+    .axis {
+      font: 10px sans-serif;
+    }
+    .axis path,
+    .axis line {
+      fill: none;
+      stroke: #000;
+      shape-rendering: crispEdges;
+    }  </style>
+</head>
+
+<body>
+  <script src="nouislider.min.js"></script>
+  <div class = "container">
+    <h1>Forest Fires in Gazorpazorp</h1><div id="viz"></div>
+    <div id="days" style="margin-top:10px">
+      <input type="checkbox" class="checkboxDays" value="'sun'" checked><label>Sunday</label>
+      <input type="checkbox" class="checkboxDays" value="'mon'" checked><label>Monday</label>
+      <input type="checkbox" class="checkboxDays" value="'tue'" checked><label>Tuesday</label>
+      <input type="checkbox" class="checkboxDays" value="'wed'" checked><label>Wednesday</label>
+      <input type="checkbox" class="checkboxDays" value="'thu'" checked><label>Thursday</label>
+      <input type="checkbox" class="checkboxDays" value="'fri'" checked><label>Friday</label>
+      <input type="checkbox" class="checkboxDays" value="'sat'" checked><label>Saturday</label>
+    </div>
+    <div id="months" style="margin-top:10px">
+      <input type="checkbox" class="checkboxMonths" value="'jan'" checked><label>Jan</label>
+      <input type="checkbox" class="checkboxMonths" value="'feb'" checked><label>Feb</label>
+      <input type="checkbox" class="checkboxMonths" value="'mar'" checked><label>Mar</label>
+      <input type="checkbox" class="checkboxMonths" value="'apr'" checked><label>Apr</label>
+      <input type="checkbox" class="checkboxMonths" value="'may'" checked><label>May</label>
+      <input type="checkbox" class="checkboxMonths" value="'jun'" checked><label>Jun</label>
+      <input type="checkbox" class="checkboxMonths" value="'jul'" checked><label>Jul</label>
+      <input type="checkbox" class="checkboxMonths" value="'aug'" checked><label>Aug</label>
+      <input type="checkbox" class="checkboxMonths" value="'sep'" checked><label>Sep</label>
+      <input type="checkbox" class="checkboxMonths" value="'oct'" checked><label>Oct</label>
+      <input type="checkbox" class="checkboxMonths" value="'nov'" checked><label>Nov</label>
+      <input type="checkbox" class="checkboxMonths" value="'dec'" checked><label>Dec</label>
+    </div>
+    <h3>Humidity</h3><div id="sliderHumidity" style="width:400pt; display: inline-block"></div>
+    <h3>Temperature</h3><div id="sliderTemp" style="width:400pt; display: inline-block"></div>
+    <h3>Wind</h3><div id="sliderWind" style="width:400pt; display: inline-block"></div>
+    <h3>SQL Script</h3><div id="sql"></div>
+  </div>
+
+
+<script>
+
+//************************************************************************************************
+// ACCESS THE DATABASE:
+// $ ssh -x uname@linux.cs.tufts.edu
+// $ mysql -h mysql-user -u 150vizstudent -p 150VIZ
+// $ password: 150vizstudent
+// MySQL [150VIZ]> describe forestfire;
+// select * from forestfire;
+
+// Hint: How do you select multiple types of days/months from the day/month column in SQL?
+//*************************************************************************************************
+
+  var minX, maxX, minY, maxY, minTemp, maxTemp, minHumidity, maxHumidity, minWind, maxWind;
+  var xScale, yScale, svg, sliderHumidity, sliderTemp, sliderWind;
+  var svgWidth, svgHeight;
+  var days = [], months = [];
+
+  var lowTemp, hiTemp, lowHumidity, hiHumidity, lowWind, hiWind;
+
+  // The following function gets a sql query, sends it to our database
+  // connection (dbconnect.php) and retrieves the results as a JSON.
+  // We're using javascript Promise to handle async calls. Feel free to
+  // ignore that part if you're not familiar with it
+
+  var executeQuery = function(queryString, functionCB) {
+      return new Promise(function(resolve, reject) {
+	  var request = new Request("https://www.cs.tufts.edu/comp/152VA/dbconnect.php",{
+	      method:"POST",
+	      body: JSON.stringify({'query':queryString}),
+	      mode:"cors"
+	  });
+
+	  fetch(request).then(function(response) {
+	      return response.json();
+	  }).then(function(resultSet) {
+	      functionCB(resultSet);
+	      // The following line tells javascript that the promise is fulfilled
+	      resolve(1);
+	  }).catch(function(error) {
+	      // The following line tells javascript that the promise has failed
+	      reject(0);
+	  });
+      });
+  }
+
+  /* TO DO: constructSQL
+
+    Contract: constructSQL modifies the 'sqlString' variable to send the appropriate SQL query
+              to the server. sqlString should specify the inputs for lowHumidity, hiHumidity,
+              lowTemp, hiHTemp, lowWind, hiWind, days, and months.
+  */
+  var constructSQL = function () {
+      var sqlString = "select * from forestfire";
+
+      // The following line will print the SQL query to the html page
+      document.getElementById('sql').innerHTML = sqlString.toString();
+
+      return sqlString;
+  }
+
+  var dataset;
+
+  // This is where the scatterplot gets drawn
+  var draw = function () {
+      // Since the query updates our SVG, we need to remove any existing SVGs during redraw
+      svg.selectAll("circle").remove();
+      svg.selectAll("g.axis").remove();
+
+
+      /* Begin code for TOOLTIPS */
+      var tooltip = d3.select("#viz").append("div")
+        .attr("class", "tooltip")
+        .style("opacity", 0);
+
+      var tipMouseover = function(d) {
+        var point = d;
+        var html  = "<b>ID:</b> " + point.id +
+                    "<br/><b>Month:</b> " + point.month +
+                    "<br/><b>Day:</b> " + point.day +
+                    "<br/><b>Temp:</b> " + point.temp +
+                    "<br/><b>Humidity:</b> " + point.humidity +
+                    "<br/><b>Wind:</b> " + point.wind;
+
+        tooltip.html(html)
+            .style("left", (d3.event.pageX + 15) + "px")
+            .style("top", (d3.event.pageY - 28) + "px")
+            .transition()
+            .duration(200)
+            .style("opacity", .9)
+      };
+
+      var tipMouseout = function(d) {
+          tooltip.transition()
+            .duration(300)
+            .style("opacity", 0);
+      }; /* END CODE FOR TOOLTIPS */
+
+      //drawing the x and y axes
+      xAxis = d3.axisTop()
+	  .scale(xScale)
+	  .ticks(5);
+
+      yAxis = d3.axisLeft()
+	  .scale(yScale)
+	  .ticks(5);
+
+      svg.append("g")
+          .attr("class", "axis")
+          .call(xAxis)
+            .append("text")
+            .attr("class", "label")
+            .attr("x", svgWidth+20)
+            .attr("y", -25)
+            .style("text-anchor", "end")
+            .text("x-location");
+
+      svg.append("g")
+          .attr("class", "axis")
+          .call(yAxis)
+          .append("text")
+          .attr("class", "label")
+          .attr("transform", "rotate(-90)")
+          .attr("x", -svgWidth+40)
+          .attr("y", -30)
+          .style("text-anchor", "end")
+          .text("y-location");
+
+      //drawing the circles
+      svg.selectAll("circle")
+	     .data(dataset)
+	     .enter()
+	     .append("circle")
+	     .attr("cx", function(d) {
+          return xScale(d.X);
+	     })
+	     .attr("cy", function(d) {
+          return yScale(d.Y);
+	     })
+	     .attr("r", 4.5)
+       .attr("fill", "FireBrick")
+       .attr("stroke-width", 1)
+       .attr("stroke", "black")
+       .on("mouseover", tipMouseover)
+       .on("mouseout", tipMouseout);
+  }
+
+  var myFunction = function(resultSet) {
+      dataset = resultSet;
+      draw();
+  }
+
+  var visSetup = function () {
+      var margin = {top: 45, right: 30, bottom: 30, left: 45},
+      width = 360 - margin.left - margin.right,
+      height = 360 - margin.top - margin.bottom;
+      svgWidth = width;
+      svgHeight = height;
+
+
+      xScale = d3.scaleLinear()
+              .domain([0, maxX])
+              .range([0, width]);
+
+      yScale = d3.scaleLinear()
+              .domain([0, maxY])
+              .range([0, height]);
+
+      svg = d3.select("#viz")
+	       .append("svg")
+	       .attr("width", width + margin.left + margin.right)
+	       .attr("height", height + margin.top + margin.bottom)
+	       .style("background-color", "#dbdad7")
+	       .append("g")
+	       .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+
+         sliderHumidity = document.getElementById('sliderHumidity');
+
+         // Creates the Humidity slider
+         noUiSlider.create(sliderHumidity, {
+	          start: [0, 100],
+	          connect: false,
+            tooltips: true,
+	          range: {
+                      'min': parseInt(minHumidity),
+                      'max': parseInt(maxHumidity)
+	                 }
+         });
+
+         // Runs new SQL query based on user updates to humidity slider
+         sliderHumidity.noUiSlider.on('change', function(){
+	          var values = sliderHumidity.noUiSlider.get();
+	          lowHumidity = values[0];
+	          hiHumidity = values[1];
+	          executeQuery (constructSQL(), myFunction);
+         });
+
+
+         sliderTemp = document.getElementById('sliderTemp');
+
+         // Creates the Temperature slider
+         noUiSlider.create(sliderTemp, {
+	          start: [0, 100],
+	          connect: false,
+            tooltips: true,
+	          range: {
+                      'min': parseInt(minTemp),
+                      'max': parseInt(maxTemp)
+	                 }
+         });
+
+         // Runs new SQL query based on user updates to temperature slider
+         sliderTemp.noUiSlider.on('change', function(){
+	          var values = sliderTemp.noUiSlider.get();
+	          lowTemp = values[0];
+	          hiTemp = values[1];
+	          executeQuery (constructSQL(), myFunction);
+         });
+
+
+         sliderWind = document.getElementById('sliderWind');
+
+         // Creates the Wind slider
+         noUiSlider.create(sliderWind, {
+	          start: [0, 100],
+	          connect: false,
+            tooltips: true,
+	          range: {
+                      'min': parseInt(minWind),
+                      'max': parseInt(maxWind)
+	                 }
+         });
+
+         // Runs new SQL query based on user updates to wind slider
+         sliderWind.noUiSlider.on('change', function(){
+	          var values = sliderWind.noUiSlider.get();
+	          lowWind = values[0];
+	          hiWind = values[1];
+	          executeQuery (constructSQL(), myFunction);
+         });
+
+         // Populates days array with original set of days checked from boxes
+         d3.selectAll(".checkboxDays").each(function(d){
+            var cbdays = d3.select(this);
+            var day = cbdays.property("value")
+            days.push(day);
+         });
+
+         // Populates months array with original set of months checked from boxes
+         d3.selectAll(".checkboxMonths").each(function(d){
+            var cbmonths = d3.select(this);
+            var month = cbmonths.property("value")
+            months.push(month);
+         });
+
+         // If a user checks or unchecks a day, push or pop that day from the days array
+         // then send a new SQL query with updated days array
+         d3.selectAll(".checkboxDays").on("change", function(){
+            var cbdays = d3.select(this);
+            var day = cbdays.property("value")
+
+            if(cbdays.property("checked")){
+              days.push(day);
+              executeQuery (constructSQL(), myFunction);
+            }
+            else{
+              var index = days.indexOf(day);
+              if (index > -1) {
+                days.splice(index, 1);
+                executeQuery (constructSQL(), myFunction);
+              }
+            }
+         });
+
+         // If a user checks or unchecks a month, push or pop that month from the months array
+         // then send a new SQL query with updated days array
+         d3.selectAll(".checkboxMonths").on("change", function(){
+            var cbmonths = d3.select(this);
+            var month = cbmonths.property("value")
+
+            if(cbmonths.property("checked")){
+              months.push(month);
+              executeQuery (constructSQL(), myFunction);
+            }
+            else{
+              var index = months.indexOf(month);
+              if (index > -1) {
+                months.splice(index, 1);
+                executeQuery (constructSQL(), myFunction);
+              }
+            }
+         });
+  }
+
+  /* TO DO: Correctly assign values from resultSetRow to the given variables */
+  function getMinMax(resultSetRow) {
+      var resultSet = resultSetRow[0];
+      minX = 0;
+      maxX = 100;
+      minY = 0;
+      maxY = 100;
+      minTemp = 0;
+      maxTemp = 100;
+      minHumidity = 0;
+      maxHumidity = 100;
+      minWind = 0;
+      maxWind = 100;
+
+      lowTemp = minTemp;
+      hiTemp = maxTemp;
+      lowHumidity = minHumidity;
+      hiHumidity = maxHumidity;
+      lowWind = minWind;
+      hiWind = maxWind;
+
+      visSetup();
+  }
+
+  /* TO DO: Correctly call a SQL query to assign min and max values from columns in forestfire.
+            Feel free to ignore the .then construct. This is for the use of javascript promises.*/
+
+  executeQuery ("", getMinMax)
+    .then(function(msg) {
+	executeQuery (constructSQL(), myFunction);
+    });
+
+</script>
+
+</body>
+
+</html>
