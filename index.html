@@ -133,7 +133,16 @@
               lowTemp, hiHTemp, lowWind, hiWind, days, and months.
   */
   var constructSQL = function () {
-      var sqlString = "select * from forestfire";
+      var sqlString = "select * \
+                       from forestfire \
+                       where temp >= " + lowTemp +
+                       " and temp <= " + hiTemp + 
+                       " and humidity >= " + lowHumidity + 
+                       " and humidity <= " + hiHumidity + 
+                       " and wind >= " + lowWind + 
+                       " and wind <= " + hiWind + 
+                       " and day in (" + days.toString() + ") \
+                       and month in (" + months.toString() + ")";
 
       // The following line will print the SQL query to the html page
       document.getElementById('sql').innerHTML = sqlString.toString();
