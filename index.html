@@ -386,19 +386,17 @@
 
   /* TO DO: Correctly assign values from resultSetRow to the given variables */
   function getMinMax(resultSetRow) {
-      keys = Object.keys(resultSetRow[0]);
-      values = Object.values(resultSetRow[0]);
       var resultSet = resultSetRow[0];
-      minX = values[0]
-      maxX = values[1]
-      minY = values[2]
-      maxY = values[3]
-      minTemp = values[4]
-      maxTemp = values[5]
-      minHumidity = values[6]
-      maxHumidity = values[7]
-      minWind = values[8]
-      maxWind = values[9]
+      minX = resultSet.minX;
+      maxX = resultSet.maxX;
+      minY = resultSet.minY;
+      maxY = resultSet.maxY;
+      minTemp = resultSet.minTemp;
+      maxTemp = resultSet.maxTemp;
+      minHumidity = resultSet.minHumidity;
+      maxHumidity = resultSet.maxHumidity;
+      minWind = resultSet.minWind;
+      maxWind = resultSet.maxWind;
 
       lowTemp = minTemp;
       hiTemp = maxTemp;
@@ -413,7 +411,7 @@
   /* TO DO: Correctly call a SQL query to assign min and max values from columns in forestfire.
             Feel free to ignore the .then construct. This is for the use of javascript promises.*/
 
-  executeQuery("select min(X), max(X), min(Y), max(Y), min(temp), max(temp), min(humidity), max(humidity), min(wind), max(wind) from forestfire", getMinMax)
+  executeQuery("select min(X) as minX, max(X) as maxX, min(Y) as minY, max(Y) as maxY, min(temp) as minTemp, max(temp) as maxTemp, min(humidity) as minHumidity, max(humidity) as maxHumidity, min(wind) as minWind, max(wind) as maxWind from forestfire", getMinMax)
     .then(function(msg) {
 	executeQuery (constructSQL(), myFunction);
     });
